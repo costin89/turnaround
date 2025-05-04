@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Würfel mit DeviceOrientation</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+    #info {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: white;
+      background: rgba(0,0,0,0.5);
+      padding: 8px;
+      font-family: sans-serif;
+      z-index: 1;
+    }
+  </style>
+</head>
+<body>
+  <div id="info">Erlaube Bewegungssensor-Zugriff auf dem Gerät</div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/DeviceOrientationControls.js"></script>
+
+  <script>
+    // Szene und Renderer
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Farbige Seiten für den Würfel
+    const materials = [
+      new THREE.MeshBasicMaterial({ color: 0xff0000 }), // rechts
+      new THREE.MeshBasicMaterial({ color: 0x00ff00 }), // links
+      new THREE.MeshBasicMaterial({ color: 0x0000ff }), // oben
+      new THREE.MeshBasicMaterial({ color: 0xffff00 }), // unten
+      new THREE.MeshBasicMaterial({ color: 0xff00ff }), // vorne
+      new THREE.MeshBasicMaterial({ color: 0x00ffff })  // hinten
+    ];
+
+    // Geometrie + Würfel
+    const geometry = new THREE.BoxGeometry();
+    const cube = new THREE.Mesh(geometry, materials);
+    scene.add(cube);
+
+    camera.position.z = 3;
+
+    // DeviceOrientationControls initialisieren
+    const controls = new THREE.DeviceOrientationControls(camera);
+
+    // Animation / Render Loop
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    // iOS 13+ benötigt Benutzerinteraktion für Permission
+    function requestPermissionIfNeeded() {
+      if (typeof DeviceMotionEvent !== 'undefined' &&
+          typeof DeviceMotionEvent.requestPermission === 'function') {
+        DeviceMotionEvent.requestPermission()
+          .then(response => {
+            if (response === 'granted') {
+              animate();
+              document.getElementById('info').style.display = 'none';
+            } else {
+              alert('Bewegungszugriff wurde verweigert.');
+            }
+          })
+          .catch(console.error);
+      } else {
+        // Android oder ältere iOS-Version
+        animate();
+        document.getElementById('info').style.display = 'none';
+      }
+    }
+
+    // Touch aufrufen, um Berechtigung zu bekommen
+    document.body.addEventListener('click', requestPermissionIfNeeded);
+    document.body.addEventListener('touchstart', requestPermissionIfNeeded);
+
+    // Resize-Handling
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
