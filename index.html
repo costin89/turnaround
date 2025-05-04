@@ -2,119 +2,116 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>Um den Würfel laufen – alle Drehachsen nutzen</title>
+  <title>Würfel bewegt sich mit Kompass um Kamera</title>
   <style>
-    body{margin:0;overflow:hidden;background:#000}
-    canvas{display:block}
-    #info,#orient{
-      position:absolute;left:0;width:100%;text-align:center;
-      font-family:sans-serif;color:#fff;background:rgba(0,0,0,.7);
-      z-index:10;padding:10px
+    body { margin: 0; overflow: hidden; background: #000; }
+    canvas { display: block; }
+    #info, #orient {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      text-align: center;
+      font-family: sans-serif;
+      color: #fff;
+      z-index: 10;
+      background: rgba(0,0,0,.7);
+      padding: 10px;
     }
-    #info{top:0}
-    #orient{bottom:0;font-size:.8rem}
+    #info { top: 0; }
+    #orient { bottom: 0; font-size: .8rem; }
   </style>
 </head>
 <body>
-  <div id="info">Tippe, um Sensor-Zugriff zu erlauben v105</div>
+  <div id="info">Tippe, um Sensor-Zugriff zu erlauben v106</div>
   <div id="orient"></div>
 
   <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 
-    /* ------------ Szene -------------------------------------------------- */
-    const scene    = new THREE.Scene();
-    const camera   = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({antialias:true});
-    renderer.setSize(innerWidth,innerHeight);
+    // Szene & Kamera
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+    camera.position.set(0, 0, 0); // Fixpunkt
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    /* ------------ Würfel ------------------------------------------------- */
+    // Würfel
     const cube = new THREE.Mesh(
       new THREE.BoxGeometry(),
-      [0xff0000,0x00ff00,0x0000ff,0xffff00,0xff00ff,0x00ffff]
-        .map(c=>new THREE.MeshBasicMaterial({color:c}))
+      [0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff].map(
+        c => new THREE.MeshBasicMaterial({ color: c })
+      )
     );
     scene.add(cube);
 
-    /* ------------ Konstanten / State ------------------------------------ */
-    const RADIUS    = 3;     // Abstand der Kamera zum Würfel
-    const HEIGHT    = 0;     // Y-Höhe (Augenhöhe)
-    let   refAlpha  = null;  // Referenz-Heading (Kalibrierung)
-    let   refBeta   = null;  // Referenz-Pitch   (β)
-    let   refGamma  = null;  // Referenz-Roll    (γ)
-    const deg2rad   = Math.PI/180;
+    const RADIUS = 3;  // Abstand vom Betrachter
+    const HEIGHT = 0;  // Y-Position des Würfels
+    let   refAlpha = null;
 
-    /* ------------ Sensor-Handler ---------------------------------------- */
-    function onDeviceOrientation(e){
-      if(e.alpha===null) return;                    // kein Sensor
-
-      /* Heading: iOS → webkitCompassHeading, sonst α */
+    function onDeviceOrientation(e) {
       const heading = e.webkitCompassHeading ?? e.alpha;
-      if(heading===undefined) return;
+      if (heading == null) return;
 
-      /* Erste Werte als Null-Referenz merken                                 */
-      if(refAlpha===null){
-        refAlpha = heading;
-        refBeta  = e.beta  ?? 0;
-        refGamma = e.gamma ?? 0;
-      }
+      if (refAlpha == null) refAlpha = heading;
 
-      /* -------- Standpunkt auf Kreis ------------------------------------ */
-      const yawRel = (heading - refAlpha + 360) % 360;   // 0-360°
-      const yawRad = yawRel * deg2rad;
+      const relative = (heading - refAlpha + 360) % 360;
+      const angleRad = relative * Math.PI / 180;
 
-      camera.position.set(
-        RADIUS * Math.sin(yawRad),     // X
-        HEIGHT,                        // Y
-        RADIUS * Math.cos(yawRad)      // Z
+      // Würfelposition berechnen
+      cube.position.set(
+        RADIUS * Math.sin(angleRad),  // X
+        HEIGHT,                       // Y
+        RADIUS * Math.cos(angleRad)  // Z
       );
 
-      /* -------- Grundblick: immer zum Würfel ---------------------------- */
+      // Kamera schaut immer zum Würfel
       camera.lookAt(cube.position);
-
-      /* -------- Zusätzliche Neigungen ----------------------------------- */
-      const pitchRel = (e.beta  - refBeta ) * deg2rad;   // β:   nach oben/unten
-      const rollRel  = (e.gamma - refGamma) * deg2rad;   // γ:   seitliches Kippen
-
-      camera.rotateX( pitchRel );   // hoch/runter
-      camera.rotateZ( -rollRel );   // links/rechts (Vorzeichen für “natürliches” Gefühl)
     }
 
-    /* ------------ Render-Loop ------------------------------------------- */
-    function loop(){ requestAnimationFrame(loop); renderer.render(scene,camera);}
-    loop();
+    function loop() {
+      requestAnimationFrame(loop);
+      renderer.render(scene, camera);
+    }
 
-    /* ------------ Portrait / Landscape-Label ---------------------------- */
+    // Info / Orientation
     const orientLbl = document.getElementById('orient');
-    function updateOrient(){
+    function updateOrientation() {
       orientLbl.textContent =
         matchMedia('(orientation:portrait)').matches ? 'Portrait-Modus' : 'Landscape-Modus';
     }
-    updateOrient();
-    addEventListener('orientationchange',updateOrient);
+    updateOrientation();
+    window.addEventListener('orientationchange', updateOrientation);
 
-    /* ------------ Resize ------------------------------------------------- */
-    addEventListener('resize',()=>{
-      camera.aspect = innerWidth/innerHeight;
+    // Resize
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth,innerHeight);
+      renderer.setSize(innerWidth, innerHeight);
     });
 
-    /* ------------ iOS-Permission ---------------------------------------- */
+    // Permission Handling (iOS)
     const info = document.getElementById('info');
-    async function requestAndStart(){
-      if(typeof DeviceOrientationEvent?.requestPermission === 'function'){
-        try{
+    async function requestAndStart() {
+      if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
+        try {
           const res = await DeviceOrientationEvent.requestPermission();
-          if(res!=='granted'){ info.textContent='Sensor-Zugriff verweigert.'; return; }
-        }catch(e){ info.textContent='Fehler: '+e; return; }
+          if (res !== 'granted') {
+            info.textContent = 'Sensor-Zugriff verweigert.';
+            return;
+          }
+        } catch (err) {
+          info.textContent = 'Fehler: ' + err;
+          return;
+        }
       }
-      info.style.display='none';
-      window.addEventListener('deviceorientation',onDeviceOrientation,true);
+      info.style.display = 'none';
+      window.addEventListener('deviceorientation', onDeviceOrientation, true);
+      loop();
     }
-    ['click','touchstart'].forEach(ev=>
-      document.body.addEventListener(ev,requestAndStart,{once:true})
+    ['click', 'touchstart'].forEach(ev =>
+      document.body.addEventListener(ev, requestAndStart, { once: true })
     );
   </script>
 </body>
