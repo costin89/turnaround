@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>Würfel bewegt sich um Kamera (Kompass + Neigung)</title>
+  <title>Würfel bewegt sich um Kamera (Kompass)</title>
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
     canvas { display: block; }
@@ -21,7 +21,7 @@
   </style>
 </head>
 <body>
-  <div id="info">Tippe, um Sensor-Zugriff zu erlauben v111</div>
+  <div id="info">Tippe, um Sensor-Zugriff zu erlauben v112</div>
 
   <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
@@ -45,41 +45,27 @@
 
     const RADIUS = 3;
     let refAlpha = null;
-    let refBeta = null;
-    let refGamma = null;
-
-    let pitch = 0;
-    let roll = 0;
     let heading = 0;
 
     function onDeviceOrientation(e) {
-      if (e.alpha == null || e.beta == null || e.gamma == null) return;
+      if (e.alpha == null) return;
 
       const alpha = e.webkitCompassHeading ?? e.alpha;
       if (refAlpha == null) {
         refAlpha = alpha;
-        refBeta = e.beta;
-        refGamma = e.gamma;
       }
 
       heading = (alpha - refAlpha + 360) % 360;
-      pitch = (e.beta - refBeta) * Math.PI / 180;
-      roll  = (e.gamma - refGamma) * Math.PI / 180;
     }
 
     function loop() {
       requestAnimationFrame(loop);
 
-      // Würfelposition relativ zur Kamera basierend auf Heading (Kompass)
+      // Würfelposition relativ zur Kamera basierend auf Heading
       const rad = heading * Math.PI / 180;
       const x = RADIUS * Math.sin(rad);
       const z = RADIUS * Math.cos(rad);
       cube.position.set(x, 0, z);
-
-      // Kamera-Ausrichtung (Pitch und Roll nur auf Kamera)
-      const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
-      const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll);
-      camera.quaternion.copy(qPitch).multiply(qRoll);
 
       // Kamera schaut auf den Würfel
       camera.lookAt(cube.position);
