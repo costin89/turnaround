@@ -2,33 +2,37 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>Würfel mit DeviceOrientation</title>
+  <title>Würfel mit iOS DeviceOrientation Zugriff</title>
   <style>
-    body { margin: 0; overflow: hidden; }
+    body { margin: 0; overflow: hidden; background: #000; }
     canvas { display: block; }
     #info {
       position: absolute;
-      top: 10px;
-      left: 10px;
+      top: 0;
+      width: 100%;
+      text-align: center;
+      background: rgba(0, 0, 0, 0.7);
       color: white;
-      background: rgba(0,0,0,0.5);
-      padding: 8px;
+      padding: 10px;
       font-family: sans-serif;
       z-index: 1;
     }
   </style>
 </head>
 <body>
-  <div id="info">Erlaube Bewegungssensor-Zugriff auf dem Gerät</div>
+  <div id="info">Tippe, um Bewegungssensor-Zugriff zu erlauben</div>
 
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/examples/js/controls/DeviceOrientationControls.js"></script>
 
   <script>
-    // Szene und Renderer
+    // Szene und Kamera
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer();
+    camera.position.z = 3;
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
@@ -41,48 +45,49 @@
       new THREE.MeshBasicMaterial({ color: 0xff00ff }), // vorne
       new THREE.MeshBasicMaterial({ color: 0x00ffff })  // hinten
     ];
-
-    // Geometrie + Würfel
     const geometry = new THREE.BoxGeometry();
     const cube = new THREE.Mesh(geometry, materials);
     scene.add(cube);
 
-    camera.position.z = 3;
-
-    // DeviceOrientationControls initialisieren
+    // DeviceOrientationControls
     const controls = new THREE.DeviceOrientationControls(camera);
 
-    // Animation / Render Loop
+    // Render-Loop
     function animate() {
       requestAnimationFrame(animate);
       controls.update();
       renderer.render(scene, camera);
     }
 
-    // iOS 13+ benötigt Benutzerinteraktion für Permission
-    function requestPermissionIfNeeded() {
-      if (typeof DeviceMotionEvent !== 'undefined' &&
-          typeof DeviceMotionEvent.requestPermission === 'function') {
-        DeviceMotionEvent.requestPermission()
+    // Permission-Handling für iOS 13+
+    function requestMotionPermission() {
+      const info = document.getElementById('info');
+
+      if (typeof DeviceOrientationEvent !== 'undefined' &&
+          typeof DeviceOrientationEvent.requestPermission === 'function') {
+        // iOS 13+
+        DeviceOrientationEvent.requestPermission()
           .then(response => {
             if (response === 'granted') {
+              info.style.display = 'none';
               animate();
-              document.getElementById('info').style.display = 'none';
             } else {
-              alert('Bewegungszugriff wurde verweigert.');
+              info.innerText = 'Bewegungszugriff wurde verweigert.';
             }
           })
-          .catch(console.error);
+          .catch(err => {
+            info.innerText = 'Fehler beim Anfordern der Berechtigung: ' + err;
+          });
       } else {
-        // Android oder ältere iOS-Version
+        // Android / andere Browser
+        info.style.display = 'none';
         animate();
-        document.getElementById('info').style.display = 'none';
       }
     }
 
-    // Touch aufrufen, um Berechtigung zu bekommen
-    document.body.addEventListener('click', requestPermissionIfNeeded);
-    document.body.addEventListener('touchstart', requestPermissionIfNeeded);
+    // Benutzerinteraktion abwarten
+    document.body.addEventListener('click', requestMotionPermission, { once: true });
+    document.body.addEventListener('touchstart', requestMotionPermission, { once: true });
 
     // Resize-Handling
     window.addEventListener('resize', () => {
