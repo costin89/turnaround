@@ -1,103 +1,121 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
-  <title>Um den Würfel laufen mit Kompass</title>
+  <meta charset="UTF-8" />
+  <title>Um den Würfel laufen – alle Drehachsen nutzen</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #000; }
-    canvas { display: block; }
-    #info {
-      position: absolute; top: 0; left: 0; right: 0;
-      background: rgba(0,0,0,.6); color: white; text-align: center;
-      padding: 10px; font-family: sans-serif; z-index: 10;
+    body{margin:0;overflow:hidden;background:#000}
+    canvas{display:block}
+    #info,#orient{
+      position:absolute;left:0;width:100%;text-align:center;
+      font-family:sans-serif;color:#fff;background:rgba(0,0,0,.7);
+      z-index:10;padding:10px
     }
+    #info{top:0}
+    #orient{bottom:0;font-size:.8rem}
   </style>
 </head>
 <body>
-  <div id="info">Tippe, um Kompass-Zugriff zu erlauben v104</div>
+  <div id="info">Tippe, um Sensor-Zugriff zu erlauben v105</div>
+  <div id="orient"></div>
 
   <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 
-    const scene = new THREE.Scene();
-
-    const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(innerWidth, innerHeight);
+    /* ------------ Szene -------------------------------------------------- */
+    const scene    = new THREE.Scene();
+    const camera   = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({antialias:true});
+    renderer.setSize(innerWidth,innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    // Cube in der Mitte
+    /* ------------ Würfel ------------------------------------------------- */
     const cube = new THREE.Mesh(
       new THREE.BoxGeometry(),
-      [
-        new THREE.MeshBasicMaterial({ color: 0xff0000 }),
-        new THREE.MeshBasicMaterial({ color: 0x00ff00 }),
-        new THREE.MeshBasicMaterial({ color: 0x0000ff }),
-        new THREE.MeshBasicMaterial({ color: 0xffff00 }),
-        new THREE.MeshBasicMaterial({ color: 0xff00ff }),
-        new THREE.MeshBasicMaterial({ color: 0x00ffff })
-      ]
+      [0xff0000,0x00ff00,0x0000ff,0xffff00,0xff00ff,0x00ffff]
+        .map(c=>new THREE.MeshBasicMaterial({color:c}))
     );
     scene.add(cube);
 
-    // Startposition: Kamera schaut auf den Würfel
-    const radius = 3; // Abstand zur Mitte
-    let alphaDegrees = 0;
+    /* ------------ Konstanten / State ------------------------------------ */
+    const RADIUS    = 3;     // Abstand der Kamera zum Würfel
+    const HEIGHT    = 0;     // Y-Höhe (Augenhöhe)
+    let   refAlpha  = null;  // Referenz-Heading (Kalibrierung)
+    let   refBeta   = null;  // Referenz-Pitch   (β)
+    let   refGamma  = null;  // Referenz-Roll    (γ)
+    const deg2rad   = Math.PI/180;
 
-    function updateCameraPositionFromAlpha() {
-      const alphaRad = THREE.MathUtils.degToRad(alphaDegrees);
-      const x = Math.sin(alphaRad) * radius;
-      const z = Math.cos(alphaRad) * radius;
-      camera.position.set(x, 0, z);
-      camera.lookAt(0, 0, 0); // immer zur Mitte schauen
-    }
+    /* ------------ Sensor-Handler ---------------------------------------- */
+    function onDeviceOrientation(e){
+      if(e.alpha===null) return;                    // kein Sensor
 
-    function animate() {
-      requestAnimationFrame(animate);
-      updateCameraPositionFromAlpha();
-      renderer.render(scene, camera);
-    }
+      /* Heading: iOS → webkitCompassHeading, sonst α */
+      const heading = e.webkitCompassHeading ?? e.alpha;
+      if(heading===undefined) return;
 
-    // Kompassdaten empfangen
-    function onDeviceOrientation(evt) {
-      if (evt.absolute && evt.alpha != null) {
-        alphaDegrees = evt.alpha;
-      }
-    }
-
-    // iOS 13+ Permission Handling
-    async function requestPermissionAndStart() {
-      const info = document.getElementById('info');
-
-      if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
-        try {
-          const response = await DeviceOrientationEvent.requestPermission();
-          if (response !== 'granted') {
-            info.textContent = 'Zugriff verweigert';
-            return;
-          }
-        } catch (e) {
-          info.textContent = 'Fehler: ' + e;
-          return;
-        }
+      /* Erste Werte als Null-Referenz merken                                 */
+      if(refAlpha===null){
+        refAlpha = heading;
+        refBeta  = e.beta  ?? 0;
+        refGamma = e.gamma ?? 0;
       }
 
-      info.style.display = 'none';
-      window.addEventListener('deviceorientationabsolute', onDeviceOrientation, true);
-      window.addEventListener('deviceorientation', onDeviceOrientation, true); // Fallback
-      animate();
+      /* -------- Standpunkt auf Kreis ------------------------------------ */
+      const yawRel = (heading - refAlpha + 360) % 360;   // 0-360°
+      const yawRad = yawRel * deg2rad;
+
+      camera.position.set(
+        RADIUS * Math.sin(yawRad),     // X
+        HEIGHT,                        // Y
+        RADIUS * Math.cos(yawRad)      // Z
+      );
+
+      /* -------- Grundblick: immer zum Würfel ---------------------------- */
+      camera.lookAt(cube.position);
+
+      /* -------- Zusätzliche Neigungen ----------------------------------- */
+      const pitchRel = (e.beta  - refBeta ) * deg2rad;   // β:   nach oben/unten
+      const rollRel  = (e.gamma - refGamma) * deg2rad;   // γ:   seitliches Kippen
+
+      camera.rotateX( pitchRel );   // hoch/runter
+      camera.rotateZ( -rollRel );   // links/rechts (Vorzeichen für “natürliches” Gefühl)
     }
 
-    ['click', 'touchstart'].forEach(evt =>
-      document.body.addEventListener(evt, requestPermissionAndStart, { once: true })
-    );
+    /* ------------ Render-Loop ------------------------------------------- */
+    function loop(){ requestAnimationFrame(loop); renderer.render(scene,camera);}
+    loop();
 
-    // Fenstergröße anpassen
-    window.addEventListener('resize', () => {
-      camera.aspect = innerWidth / innerHeight;
+    /* ------------ Portrait / Landscape-Label ---------------------------- */
+    const orientLbl = document.getElementById('orient');
+    function updateOrient(){
+      orientLbl.textContent =
+        matchMedia('(orientation:portrait)').matches ? 'Portrait-Modus' : 'Landscape-Modus';
+    }
+    updateOrient();
+    addEventListener('orientationchange',updateOrient);
+
+    /* ------------ Resize ------------------------------------------------- */
+    addEventListener('resize',()=>{
+      camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
+      renderer.setSize(innerWidth,innerHeight);
     });
+
+    /* ------------ iOS-Permission ---------------------------------------- */
+    const info = document.getElementById('info');
+    async function requestAndStart(){
+      if(typeof DeviceOrientationEvent?.requestPermission === 'function'){
+        try{
+          const res = await DeviceOrientationEvent.requestPermission();
+          if(res!=='granted'){ info.textContent='Sensor-Zugriff verweigert.'; return; }
+        }catch(e){ info.textContent='Fehler: '+e; return; }
+      }
+      info.style.display='none';
+      window.addEventListener('deviceorientation',onDeviceOrientation,true);
+    }
+    ['click','touchstart'].forEach(ev=>
+      document.body.addEventListener(ev,requestAndStart,{once:true})
+    );
   </script>
 </body>
 </html>
