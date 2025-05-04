@@ -21,7 +21,7 @@
   </style>
 </head>
 <body>
-  <div id="info">Tippe, um Sensor-Zugriff zu erlauben v110</div>
+  <div id="info">Tippe, um Sensor-Zugriff zu erlauben v111</div>
 
   <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
@@ -48,9 +48,6 @@
     let refBeta = null;
     let refGamma = null;
 
-    const target = new THREE.Object3D();  // Temporäres Ziel für Blickrichtung
-    scene.add(target);
-
     let pitch = 0;
     let roll = 0;
     let heading = 0;
@@ -73,19 +70,19 @@
     function loop() {
       requestAnimationFrame(loop);
 
-      // Positioniere den Würfel auf einem Kreis um die Kamera
+      // Würfelposition relativ zur Kamera basierend auf Heading (Kompass)
       const rad = heading * Math.PI / 180;
-      cube.position.set(
-        RADIUS * Math.sin(rad),
-        0,
-        RADIUS * Math.cos(rad)
-      );
+      const x = RADIUS * Math.sin(rad);
+      const z = RADIUS * Math.cos(rad);
+      cube.position.set(x, 0, z);
 
-      // Blickrichtung: Kamera schaut auf "target", das leicht geneigt wird
-      target.position.copy(cube.position);
-      target.rotation.set(pitch, 0, roll);  // Neigung auf Ziel übertragen
+      // Kamera-Ausrichtung (Pitch und Roll nur auf Kamera)
+      const qPitch = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), pitch);
+      const qRoll = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), roll);
+      camera.quaternion.copy(qPitch).multiply(qRoll);
 
-      camera.lookAt(target.position);
+      // Kamera schaut auf den Würfel
+      camera.lookAt(cube.position);
 
       renderer.render(scene, camera);
     }
