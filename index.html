@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>Würfel mit Kompass, Pitch und Roll</title>
+  <title>Würfel bewegt sich um Kamera (Kompass + Neigung)</title>
   <style>
     body { margin: 0; overflow: hidden; background: #000; }
     canvas { display: block; }
@@ -21,15 +21,14 @@
   </style>
 </head>
 <body>
-  <div id="info">Tippe, um Sensor-Zugriff zu erlauben v108</div>
+  <div id="info">Tippe, um Sensor-Zugriff zu erlauben v110</div>
 
   <script type="module">
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 
-    // Grundsetup
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
-    camera.position.set(0, 0, 0); // Kamera ist fixiert
+    camera.position.set(0, 0, 0);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(innerWidth, innerHeight);
@@ -49,6 +48,13 @@
     let refBeta = null;
     let refGamma = null;
 
+    const target = new THREE.Object3D();  // Temporäres Ziel für Blickrichtung
+    scene.add(target);
+
+    let pitch = 0;
+    let roll = 0;
+    let heading = 0;
+
     function onDeviceOrientation(e) {
       if (e.alpha == null || e.beta == null || e.gamma == null) return;
 
@@ -59,32 +65,28 @@
         refGamma = e.gamma;
       }
 
-      const relAlpha = (alpha - refAlpha + 360) % 360;
-      const angle = relAlpha * Math.PI / 180;
-
-      // Positioniere den Würfel um die Kamera
-      cube.position.set(
-        RADIUS * Math.sin(angle),
-        0,
-        RADIUS * Math.cos(angle)
-      );
-
-      // Kamera schaut zum Würfel
-      camera.lookAt(cube.position);
-
-      // Zusätzliche Neigung (β: Pitch, γ: Roll)
-      const pitch = (e.beta - refBeta) * Math.PI / 180;
-      const roll  = (e.gamma - refGamma) * Math.PI / 180;
-
-      // Pitch nach oben/unten
-      camera.rotateX(pitch);
-
-      // Roll (Kippen links/rechts)
-      camera.rotateZ(-roll); // Vorzeichen angepasst für natürliches Gefühl
+      heading = (alpha - refAlpha + 360) % 360;
+      pitch = (e.beta - refBeta) * Math.PI / 180;
+      roll  = (e.gamma - refGamma) * Math.PI / 180;
     }
 
     function loop() {
       requestAnimationFrame(loop);
+
+      // Positioniere den Würfel auf einem Kreis um die Kamera
+      const rad = heading * Math.PI / 180;
+      cube.position.set(
+        RADIUS * Math.sin(rad),
+        0,
+        RADIUS * Math.cos(rad)
+      );
+
+      // Blickrichtung: Kamera schaut auf "target", das leicht geneigt wird
+      target.position.copy(cube.position);
+      target.rotation.set(pitch, 0, roll);  // Neigung auf Ziel übertragen
+
+      camera.lookAt(target.position);
+
       renderer.render(scene, camera);
     }
 
@@ -95,7 +97,7 @@
       renderer.setSize(innerWidth, innerHeight);
     });
 
-    // iOS-Permission
+    // iOS Permission
     const info = document.getElementById('info');
     async function requestAndStart() {
       if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
