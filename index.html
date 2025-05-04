@@ -1,132 +1,103 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <title>Device-Motion-Cube – würfel bleibt auf Augenhöhe</title>
+  <meta charset="UTF-8">
+  <title>Um den Würfel laufen mit Kompass</title>
   <style>
-    body   { margin: 0; overflow: hidden; background: #000; }
+    body { margin: 0; overflow: hidden; background: #000; }
     canvas { display: block; }
-    #info, #orient {
-      position: absolute; left: 0; width: 100%; text-align: center;
-      font-family: sans-serif; color: #fff; z-index: 10;
-      background: rgba(0,0,0,.7); padding: 10px;
+    #info {
+      position: absolute; top: 0; left: 0; right: 0;
+      background: rgba(0,0,0,.6); color: white; text-align: center;
+      padding: 10px; font-family: sans-serif; z-index: 10;
     }
-    #info   { top: 0; }
-    #orient { bottom: 0; font-size: .8rem; }
   </style>
 </head>
 <body>
-  <div id="info">Tippe, um Bewegungssensor-Zugriff zu erlauben v102</div>
-  <div id="orient"></div>
+  <div id="info">Tippe, um Kompass-Zugriff zu erlauben v104</div>
 
   <script type="module">
-    /* ——————————————————— Three.js import ——————————————————— */
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 
-    /* ——————————————————— Grund-Setup ——————————————————— */
-    const scene   = new THREE.Scene();
+    const scene = new THREE.Scene();
 
-    const camera  = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
-    camera.position.z = 3;                     // 3 m vor dem Ursprung
-
+    const camera = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(innerWidth, innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    /* ——————————————————— Würfel ——————————————————— */
+    // Cube in der Mitte
     const cube = new THREE.Mesh(
       new THREE.BoxGeometry(),
-      [0xff0000,0x00ff00,0x0000ff,0xffff00,0xff00ff,0x00ffff]
-        .map(c => new THREE.MeshBasicMaterial({ color: c }))
+      [
+        new THREE.MeshBasicMaterial({ color: 0xff0000 }),
+        new THREE.MeshBasicMaterial({ color: 0x00ff00 }),
+        new THREE.MeshBasicMaterial({ color: 0x0000ff }),
+        new THREE.MeshBasicMaterial({ color: 0xffff00 }),
+        new THREE.MeshBasicMaterial({ color: 0xff00ff }),
+        new THREE.MeshBasicMaterial({ color: 0x00ffff })
+      ]
     );
     scene.add(cube);
 
-    /* ——————————————————— Device-Orientation-Mathe ——————————————————— */
-    const zee      = new THREE.Vector3(0, 0, 1);                 // Referenz-Z-Achse
-    const euler    = new THREE.Euler();                          // α,β,γ → Euler
-    const qScreen  = new THREE.Quaternion();                     // Bildschirm-Rotation
-    const qCam     = new THREE.Quaternion();                     // Ergebnis-Quaternion
-    const q1       = new THREE.Quaternion(                       // -90° um X
-                       -Math.sqrt(0.5), 0, 0,  Math.sqrt(0.5) );
-    const deg2rad  = Math.PI / 180;
+    // Startposition: Kamera schaut auf den Würfel
+    const radius = 3; // Abstand zur Mitte
+    let alphaDegrees = 0;
 
-    function onDeviceOrientation(evt){
-      if(evt.alpha === null) return;           // keine Daten (z. B. Desktop)
-
-      /* 1 – Euler in der Reihenfolge Y-X-Z (wie Three.js-Original) */
-      const alpha =  evt.alpha * deg2rad;      // Z-Achse (Kompass)
-      const beta  =  evt.beta  * deg2rad;      // X-Achse (vor/zurück kippen)
-      const gamma =  evt.gamma * deg2rad;      // Y-Achse (links/rechts kippen)
-
-      euler.set(beta, alpha, -gamma, 'YXZ');   // Achtung: 'YXZ' !
-
-      /* 2 – Grund-Quaternion aus Euler */
-      qCam.setFromEuler(euler);
-
-      /* 3 – -90° um X, weil Kamera hinten aus dem Gerät schaut */
-      qCam.multiply(q1);
-
-      /* 4 – Bildschirm-Orientierung (Portrait/Landscape) */
-      const orient = (screen.orientation?.angle || window.orientation || 0) * deg2rad;
-      qScreen.setFromAxisAngle(zee, -orient);
-      qCam.multiply(qScreen);
-
-      /* 5 – auf Kamera anwenden */
-      camera.quaternion.copy(qCam);
+    function updateCameraPositionFromAlpha() {
+      const alphaRad = THREE.MathUtils.degToRad(alphaDegrees);
+      const x = Math.sin(alphaRad) * radius;
+      const z = Math.cos(alphaRad) * radius;
+      camera.position.set(x, 0, z);
+      camera.lookAt(0, 0, 0); // immer zur Mitte schauen
     }
 
-    /* ——————————————————— Render-Loop ——————————————————— */
-    function loop(){
-      requestAnimationFrame(loop);
-
-      /* Würfel bleibt in Augenhöhe (gleicher Y-Wert wie Kamera) */
-      cube.position.y = camera.position.y;
-
+    function animate() {
+      requestAnimationFrame(animate);
+      updateCameraPositionFromAlpha();
       renderer.render(scene, camera);
     }
 
-    /* ——————————————————— Layout / Orientierung ——————————————————— */
-    const orientLbl = document.getElementById('orient');
-    function updateOrientLbl(){
-      orientLbl.textContent =
-        matchMedia('(orientation: portrait)').matches ? 'Portrait-Modus'
-                                                      : 'Landscape-Modus';
-    }
-    updateOrientLbl();
-
-    function handleResize(){
-      camera.aspect = innerWidth / innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
+    // Kompassdaten empfangen
+    function onDeviceOrientation(evt) {
+      if (evt.absolute && evt.alpha != null) {
+        alphaDegrees = evt.alpha;
+      }
     }
 
-    addEventListener('resize',           handleResize);
-    addEventListener('orientationchange',() =>{ updateOrientLbl(); handleResize(); });
+    // iOS 13+ Permission Handling
+    async function requestPermissionAndStart() {
+      const info = document.getElementById('info');
 
-    /* ——————————————————— iOS-Permission ——————————————————— */
-    const info = document.getElementById('info');
-
-    async function requestAndStart(){
-      if(typeof DeviceOrientationEvent?.requestPermission === 'function'){
-        try{
-          const res = await DeviceOrientationEvent.requestPermission();
-          if(res !== 'granted'){
-            info.textContent = 'Bewegungszugriff wurde verweigert.';
+      if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
+        try {
+          const response = await DeviceOrientationEvent.requestPermission();
+          if (response !== 'granted') {
+            info.textContent = 'Zugriff verweigert';
             return;
           }
-        }catch(e){
-          info.textContent = 'Berechtigungs-Fehler: ' + e;
+        } catch (e) {
+          info.textContent = 'Fehler: ' + e;
           return;
         }
       }
+
       info.style.display = 'none';
-      window.addEventListener('deviceorientation', onDeviceOrientation, true);
-      loop();
+      window.addEventListener('deviceorientationabsolute', onDeviceOrientation, true);
+      window.addEventListener('deviceorientation', onDeviceOrientation, true); // Fallback
+      animate();
     }
 
-    ['click','touchstart'].forEach(ev =>
-      document.body.addEventListener(ev, requestAndStart, { once: true })
+    ['click', 'touchstart'].forEach(evt =>
+      document.body.addEventListener(evt, requestPermissionAndStart, { once: true })
     );
+
+    // Fenstergröße anpassen
+    window.addEventListener('resize', () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
   </script>
 </body>
 </html>
