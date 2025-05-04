@@ -2,97 +2,110 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>Three.js-Würfel mit Device-Motion</title>
+  <title>Three-Cube mit eigenem DeviceOrientation-Code</title>
   <style>
-    body { margin: 0; overflow: hidden; background:#000; }
-    canvas { display: block; }
-    #info {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      padding: 12px 8px;
-      text-align: center;
-      font-family: sans-serif;
-      color: #fff;
-      background: rgba(0,0,0,.7);
-      z-index: 10;
+    body{margin:0;overflow:hidden;background:#000}
+    canvas{display:block}
+    #info,#orient{
+      position:absolute;left:0;width:100%;text-align:center;
+      font-family:sans-serif;color:#fff;z-index:10;background:rgba(0,0,0,.7);padding:10px
     }
+    #info{top:0}
+    #orient{bottom:0;font-size:.8rem}
   </style>
 </head>
 <body>
   <div id="info">Tippe, um Bewegungssensor-Zugriff zu erlauben</div>
+  <div id="orient"></div>
 
-  <!-- Alles im ES-Modul-Script: -->
   <script type="module">
-    /* ---- Imports (r160) ---- */
+    /* --- Imports ---------------------------------------------------------- */
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
-    import { DeviceOrientationControls } from 'https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/controls/DeviceOrientationControls.js';
 
-    /* ---- Grund-Setup ---- */
-    const scene   = new THREE.Scene();
-    const camera  = new THREE.PerspectiveCamera(75, innerWidth / innerHeight, 0.1, 1000);
+    /* --- Grund-Setup ------------------------------------------------------ */
+    const scene  = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
     camera.position.z = 3;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({antialias:true});
     renderer.setSize(innerWidth, innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    /* ---- Würfel mit 6 Farben ---- */
-    const materials = [
-      new THREE.MeshBasicMaterial({ color: 0xff0000 }), // rechts
-      new THREE.MeshBasicMaterial({ color: 0x00ff00 }), // links
-      new THREE.MeshBasicMaterial({ color: 0x0000ff }), // oben
-      new THREE.MeshBasicMaterial({ color: 0xffff00 }), // unten
-      new THREE.MeshBasicMaterial({ color: 0xff00ff }), // vorne
-      new THREE.MeshBasicMaterial({ color: 0x00ffff })  // hinten
-    ];
-    const cube = new THREE.Mesh(new THREE.BoxGeometry(), materials);
-    scene.add(cube);
+    /* --- Würfel ----------------------------------------------------------- */
+    const colors = [0xff0000,0x00ff00,0x0000ff,0xffff00,0xff00ff,0x00ffff]
+      .map(c => new THREE.MeshBasicMaterial({color:c}));
+    scene.add(new THREE.Mesh(new THREE.BoxGeometry(), colors));
 
-    /* ---- Controls ---- */
-    const controls = new DeviceOrientationControls(camera, renderer.domElement);
+    /* --- Eigenes Device-Orientation-Handling ----------------------------- */
+    const zee      = new THREE.Vector3(0,0,1);      // referenz-Z-Achse
+    const euler    = new THREE.Euler();             // aus αβγ
+    const q0       = new THREE.Quaternion();        // screen-orientation
+    const qCam     = new THREE.Quaternion();        // end-ergebnis
+    const deg2rad  = Math.PI/180;
 
-    /* ---- Render-Loop ---- */
-    function renderLoop() {
-      requestAnimationFrame(renderLoop);
-      controls.update();      // Kamera an Gerät ausrichten
+    function onDeviceOrientation(evt){
+      const {alpha, beta, gamma} = evt;
+      if(alpha === null) return; // keine daten – z.b. desktop
+
+      // 1. Euler (multipliziert wie in spec: 'ZXY')
+      euler.set(beta*deg2rad, gamma*deg2rad, -alpha*deg2rad, 'ZXY');
+
+      // 2. Basis-Quaternion aus Euler
+      qCam.setFromEuler(euler);
+
+      // 3. Bildschirm-Orientierung berücksichtigen
+      const so = screen.orientation?.angle || window.orientation || 0; // fallback iOS
+      q0.setFromAxisAngle(zee, -so*deg2rad);
+      qCam.multiply(q0);
+
+      camera.quaternion.copy(qCam);
+    }
+
+    /* --- Loop ------------------------------------------------------------- */
+    function loop(){
+      requestAnimationFrame(loop);
       renderer.render(scene, camera);
     }
 
-    /* ---- iOS-Permission ---- */
-    const info = document.getElementById('info');
+    /* --- Permission-Handling iOS 13+ -------------------------------------- */
+    const infoEl  = document.getElementById('info');
+    const orientEl= document.getElementById('orient');
 
-    async function askPermissionAndStart() {
-      // iOS 13+: DeviceOrientationEvent.requestPermission() vorhanden
-      if (typeof DeviceOrientationEvent !== 'undefined' &&
-          typeof DeviceOrientationEvent.requestPermission === 'function') {
-        try {
-          const state = await DeviceOrientationEvent.requestPermission();
-          if (state === 'granted') {
-            info.style.display = 'none';
-            renderLoop();
-          } else {
-            info.textContent = 'Bewegungszugriff wurde verweigert.';
+    function showOrientLabel(){
+      orientEl.textContent =
+        matchMedia('(orientation:portrait)').matches ? 'Portrait-Modus' : 'Landscape-Modus';
+    }
+    showOrientLabel();
+
+    window.addEventListener('orientationchange',()=>{
+      showOrientLabel();
+      // nach Gerätedrehung Kamera-Aspect / Renderer anpassen
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    async function startSensors(){
+      if(typeof DeviceOrientationEvent?.requestPermission === 'function'){
+        try{
+          const res = await DeviceOrientationEvent.requestPermission();
+          if(res !== 'granted'){
+            infoEl.textContent='Bewegungszugriff verweigert.'; return;
           }
-        } catch (err) {
-          info.textContent = 'Berechtigungs-Fehler: ' + err;
-        }
-      } else {
-        // Android oder ältere iOS-Versionen
-        info.style.display = 'none';
-        renderLoop();
+        }catch(e){infoEl.textContent='Berechtigungs-Fehler: '+e;return;}
       }
+      infoEl.style.display='none';
+      window.addEventListener('deviceorientation', onDeviceOrientation, true);
+      loop();
     }
 
-    // Erste Benutzer-Interaktion abwarten
-    ['click', 'touchstart'].forEach(evt =>
-      document.body.addEventListener(evt, askPermissionAndStart, { once: true })
+    ['click','touchstart'].forEach(t =>
+      document.body.addEventListener(t,startSensors,{once:true})
     );
 
-    /* ---- Resize ---- */
-    addEventListener('resize', () => {
-      camera.aspect = innerWidth / innerHeight;
+    /* --- Responsive ------------------------------------------------------- */
+    addEventListener('resize', () =>{
+      camera.aspect = innerWidth/innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
     });
