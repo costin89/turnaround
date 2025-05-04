@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>Cube auf Augenhöhe mit Device-Motion</title>
+  <title>Device-Motion-Cube (gleiche Höhe wie Kamera)</title>
   <style>
     body{margin:0;overflow:hidden;background:#000}
     canvas{display:block}
@@ -15,131 +15,111 @@
   </style>
 </head>
 <body>
-  <div id="info">Tippe, um Bewegungssensor zu erlauben</div>
+  <div id="info">Tippe, um Bewegungssensor-Zugriff zu erlauben v101</div>
   <div id="orient"></div>
 
   <script type="module">
-    /* ------------------------------------------------------------------ *
-     *  Three.js-Import (ES-Module)                                       *
-     * ------------------------------------------------------------------ */
+    /* ---------- Three.js import ------------------------------------------ */
     import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
 
-    /* ------------------------------------------------------------------ *
-     *  Grund-Setup                                                       *
-     * ------------------------------------------------------------------ */
+    /* ---------- Grund-Setup ---------------------------------------------- */
     const scene   = new THREE.Scene();
-    const camera  = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
-    camera.position.z = 2;              // Kamera-Abstand (bleibt fix)
+
+    const camera  = new THREE.PerspectiveCamera(
+      75, innerWidth/innerHeight, 0.1, 1000
+    );
+    camera.position.z = 3;
 
     const renderer = new THREE.WebGLRenderer({ antialias:true });
     renderer.setSize(innerWidth, innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    /* ------------------------------------------------------------------ *
-     *  Würfel (jede Seite eigene Farbe)                                  *
-     * ------------------------------------------------------------------ */
-    const mats = [
-      new THREE.MeshBasicMaterial({ color:0xff0000 }), // rechts
-      new THREE.MeshBasicMaterial({ color:0x00ff00 }), // links
-      new THREE.MeshBasicMaterial({ color:0x0000ff }), // oben
-      new THREE.MeshBasicMaterial({ color:0xffff00 }), // unten
-      new THREE.MeshBasicMaterial({ color:0xff00ff }), // vorne
-      new THREE.MeshBasicMaterial({ color:0x00ffff })  // hinten
-    ];
-    const cube = new THREE.Mesh(new THREE.BoxGeometry(), mats);
+    /* ---------- Bunter Würfel ------------------------------------------- */
+    const cubeMaterials = [
+      0xff0000, 0x00ff00, 0x0000ff, 0xffff00, 0xff00ff, 0x00ffff
+    ].map(c => new THREE.MeshBasicMaterial({ color:c }));
+
+    const cube = new THREE.Mesh(new THREE.BoxGeometry(), cubeMaterials);
     scene.add(cube);
 
-    /* ------------------------------------------------------------------ *
-     *  DeviceOrientation → Kamera-Quaternion                             *
-     * ------------------------------------------------------------------ */
-    const zee      = new THREE.Vector3(0,0,1);    // Referenz-Z
-    const euler    = new THREE.Euler();
-    const qScreen  = new THREE.Quaternion();
-    const qCam     = new THREE.Quaternion();
-    const deg2rad  = Math.PI/180;
+    /* ---------- Eigenes DeviceOrientation-Handling ----------------------- */
+    const zee     = new THREE.Vector3(0,0,1);      // Referenz-Z-Achse
+    const euler   = new THREE.Euler();             // αβγ → Euler
+    const qScreen = new THREE.Quaternion();        // Bildschirm-Rotation
+    const qCam    = new THREE.Quaternion();        // End-Quaternion
+    const deg2rad = Math.PI / 180;
 
-    function onOrientation(e){
-      if(e.alpha == null) return;                // keine Daten (Desktop)
+    function onDeviceOrientation(evt){
+      const { alpha, beta, gamma } = evt;
+      if(alpha === null) return;                    // keine Daten (Desktop)
 
-      // 1) Euler aus alpha, beta, gamma  (Reihenfolge Z-X-Y)
-      euler.set(e.beta*deg2rad, e.gamma*deg2rad, -e.alpha*deg2rad, 'ZXY');
+      /* 1. Euler (Reihenfolge Z-X-Y laut W3C-Spec) */
+      euler.set(beta*deg2rad, gamma*deg2rad, -alpha*deg2rad, 'ZXY');
+
+      /* 2. Quaternion aus Euler */
       qCam.setFromEuler(euler);
 
-      // 2) Bildschirm-Orientierung (Portrait/Landscape)
-      const ang = screen.orientation?.angle || window.orientation || 0;
-      qScreen.setFromAxisAngle(zee, -ang*deg2rad);
+      /* 3. Bildschirm-Ausrichtung (Portrait/Landscape) einrechnen */
+      const so = screen.orientation?.angle || window.orientation || 0;
+      qScreen.setFromAxisAngle(zee, -so*deg2rad);
       qCam.multiply(qScreen);
 
       camera.quaternion.copy(qCam);
     }
 
-    /* ------------------------------------------------------------------ *
-     *  Würfel-Position: immer vor Kamera-Blickrichtung, gleiche Höhe     *
-     * ------------------------------------------------------------------ */
-    const dir      = new THREE.Vector3();
-    const DIST     = 3;               // Abstand in “Augenrichtung”
-
-    function updateCubePos(){
-      camera.getWorldDirection(dir);  // Blickrichtung
-      dir.y = 0;                      // Höhenanteil kappen → bleibt waagrecht
-      dir.normalize().multiplyScalar(DIST);
-
-      cube.position.copy(camera.position).add(dir);
-      cube.position.y = camera.position.y;  // exakt gleiche Höhe
-    }
-
-    /* ------------------------------------------------------------------ *
-     *  Render-Loop                                                       *
-     * ------------------------------------------------------------------ */
+    /* ---------- Render-Loop --------------------------------------------- */
     function loop(){
       requestAnimationFrame(loop);
-      updateCubePos();
+
+      /* Der Würfel folgt der Kamera-Höhe (Y-Achse) */
+      cube.position.y = camera.position.y;
+
       renderer.render(scene, camera);
     }
 
-    /* ------------------------------------------------------------------ *
-     *  iOS 13 + Berechtigung                                             *
-     * ------------------------------------------------------------------ */
-    const infoEl   = document.getElementById('info');
-    const orientEl = document.getElementById('orient');
-
-    function showOrientLabel(){
-      orientEl.textContent =
-        matchMedia('(orientation:portrait)').matches ? 'Portrait-Modus' : 'Landscape-Modus';
+    /* ---------- Portrait/Landscape-Label -------------------------------- */
+    const orientLabel = document.getElementById('orient');
+    function updateOrientLabel(){
+      orientLabel.textContent =
+        matchMedia('(orientation:portrait)').matches ?
+        'Portrait-Modus' : 'Landscape-Modus';
     }
-    showOrientLabel();
+    updateOrientLabel();
 
-    async function start(){
+    /* ---------- Resize & Orientation-Events ----------------------------- */
+    function handleResize(){
+      camera.aspect = innerWidth/innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    }
+
+    addEventListener('resize', handleResize);
+    addEventListener('orientationchange', () => {
+      updateOrientLabel();
+      handleResize();
+      /* Controls neu synchronisieren:  einmal connecten reicht,
+         weil wir den Sensor direkt auswerten                        */
+    });
+
+    /* ---------- iOS 13+ Permission-Flow ------------------------------- */
+    const info = document.getElementById('info');
+
+    async function requestAndStart(){
       if(typeof DeviceOrientationEvent?.requestPermission === 'function'){
         try{
-          const resp = await DeviceOrientationEvent.requestPermission();
-          if(resp !== 'granted'){infoEl.textContent='Bewegungszugriff verweigert.';return;}
-        }catch(err){infoEl.textContent='Fehler: '+err;return;}
+          const res = await DeviceOrientationEvent.requestPermission();
+          if(res !== 'granted'){ info.textContent='Bewegungszugriff verweigert.'; return; }
+        }catch(e){ info.textContent='Berechtigungs-Fehler: '+e; return; }
       }
-      infoEl.style.display='none';
-      addEventListener('deviceorientation', onOrientation, true);
+      info.style.display='none';
+      window.addEventListener('deviceorientation', onDeviceOrientation, true);
       loop();
     }
 
+    /* Erste Benutzer-Interaktion abwarten (Pflicht für iOS) */
     ['click','touchstart'].forEach(ev =>
-      document.body.addEventListener(ev, start, { once:true })
+      document.body.addEventListener(ev, requestAndStart, { once:true })
     );
-
-    /* ------------------------------------------------------------------ *
-     *  Resize / Rotation-Änderungen                                      *
-     * ------------------------------------------------------------------ */
-    addEventListener('resize', ()=>{
-      camera.aspect = innerWidth/innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
-    });
-
-    addEventListener('orientationchange', ()=>{
-      showOrientLabel();
-      camera.aspect = innerWidth/innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
-    });
   </script>
 </body>
 </html>
